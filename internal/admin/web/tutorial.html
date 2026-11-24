@@ -1,0 +1,150 @@
+<div class="tutorial">
+  <nav class="panel pad lesson-nav" aria-label="教程目录">
+    <strong>按你的用途查找</strong>
+    <a href="#start">第一次使用</a>
+    <a href="#crawler">爬虫：自动或指定地区</a>
+    <a href="#hy2">已有 hy2</a>
+    <a href="#reality">已有 REALITY</a>
+    <a href="#verify">验证和排错</a>
+  </nav>
+
+  <div class="stack">
+    <section class="panel pad lesson" id="start">
+      <h2>第一次使用</h2>
+      <ol>
+        <li>打开「地区出口」，确认想用的地区至少有 <strong>1 个健康出口</strong>。例如日本的代码是 <code>JP</code>，新加坡是 <code>SG</code>。</li>
+        <li>打开「接入管理 → 代理账号」，创建名为 <code>crawler</code> 的账号，勾选允许的地区。密码只显示一次，复制到自己的密码管理器。</li>
+        <li>运行程序的机器填写渡口的代理地址与端口。渡口所在机器上是 <code>{{PROXY}}</code>。其他机器上的 <code>127.0.0.1</code> 指那台机器自身，需要先用 SSH 转发或使用私有网络。</li>
+      </ol>
+      <p>后台管理员密码用于登录网页。下面的所有接入示例都使用<strong>代理账号密码</strong>。</p>
+      <details>
+        <summary>爬虫跑在另一台电脑上时，怎样连接？</summary>
+        <p>在运行爬虫的电脑上执行下面这条命令。把 <code>your-user@your-vps</code> 换成原来登录 VPS 的 SSH 地址。保持这个终端打开，爬虫就可以用本机 <code>127.0.0.1:{{PROXY_PORT}}</code>。</p>
+        <pre>ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:{{PROXY_PORT}}:127.0.0.1:{{PROXY_PORT}} your-user@your-vps</pre>
+        <p>若本机 {{PROXY_PORT}} 已占用，把冒号后的第一个 {{PROXY_PORT}} 改为其他空闲端口（例如 17928），爬虫也改用那个端口。</p>
+      </details>
+    </section>
+
+    <section class="panel pad lesson" id="crawler">
+      <h2>爬虫怎么用</h2>
+      <table class="mini-table">
+        <thead><tr><th>用途</th><th>代理用户名</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td>让渡口自动选</td><td><code>crawler</code></td><td>账号模式选「自动轮换」。新连接从该账号允许的健康出口里分配。</td></tr>
+          <tr><td>只走日本</td><td><code>crawler.JP</code></td><td>日本必须在账号允许列表里。日本没有健康出口时连接失败。</td></tr>
+          <tr><td>固定一个已创建的会话</td><td><code>crawler.JP.会话ID</code></td><td>在「连接与会话」创建绑定后使用。也可用 <code>crawler.auto.会话ID</code> 让会话决定地区。</td></tr>
+        </tbody>
+      </table>
+      <h3>先用 curl 测一下</h3>
+      <p>运行命令后，curl 会提示输入代理密码。看到一串公网 IP 表示连接成功。使用 <code>socks5h</code> 会让渡口通过出口解析网站域名。</p>
+      <pre># 自动选出口
+curl --noproxy '' --proxy socks5h://{{PROXY}} --proxy-user crawler --max-time 25 https://api.ipify.org
+
+# 只走日本，密码仍使用 crawler 的密码
+curl --noproxy '' --proxy socks5h://{{PROXY}} --proxy-user crawler.JP --max-time 25 https://api.ipify.org
+
+# 你的程序只支持 HTTP 代理时
+curl --noproxy '' --proxy http://{{PROXY}} --proxy-user crawler.JP --max-time 25 https://api.ipify.org</pre>
+      <h3>Python 入门示例</h3>
+      <p>先在你的 Python 环境安装 <code>python -m pip install 'requests[socks]'</code>。把下面代码存成 <code>check_exit.py</code>，再用 <code>python check_exit.py</code> 运行。</p>
+      <pre>from getpass import getpass
+from urllib.parse import quote
+
+import requests
+
+username = "crawler"  # 只走日本时，改成 "crawler.JP"
+password = quote(getpass("渡口代理密码: "), safe="")
+proxy = f"socks5h://{username}:{password}@{{PROXY}}"
+
+with requests.Session() as client:
+    client.trust_env = False
+    response = client.get(
+        "https://api.ipify.org",
+        proxies={"http": proxy, "https": proxy},
+        timeout=25,
+    )
+    response.raise_for_status()
+    print("实际出口 IP:", response.text)</pre>
+      <p>接到现有爬虫时，把同一组 <code>proxies</code> 传给原来的请求。轮换发生在新建连接时。一个 Session 复用连接后，多个请求可以共用一个出口。减少请求频率并按网站的 <code>Retry-After</code> 重试。</p>
+    </section>
+
+    <section class="panel pad lesson" id="hy2">
+      <h2>已有 Hysteria 2，怎么加一个日本落地？</h2>
+      <ol>
+        <li>在渡口创建 <code>home-jp</code>，模式选「固定地区」，地区只选日本。先用上面的 curl 在 VPS 上测试 <code>home-jp.JP</code>。</li>
+        <li>打开你的 <strong>Hysteria 2 服务端配置或面板</strong>。在「出站」新增 SOCKS5 出站 <code>ferry_jp</code>，填代理地址、用户名和渡口密码。</li>
+        <li>如果这个 hy2 只给自己用，并希望所有 TCP 都走日本，让 <code>ferry_jp</code> 成为默认出站。要保留直连，则保留原来的默认出站，添加只对日本身份或指定域名生效的规则。</li>
+      </ol>
+      <pre># 追加到原本的 outbounds 下，不要建立第二个同名配置项
+- name: ferry_jp
+  type: socks5
+  socks5:
+    addr: {{PROXY}}
+    username: home-jp.JP
+    password: "在这里填渡口密码"</pre>
+      <details>
+        <summary>同一个 hy2 端口保留原始、日本及其他地区选项</summary>
+        <p>Hysteria 2 2.14 及以上可以按认证用户名分流。保留现有管理员配置，在 <code>auth.userpass</code> 中添加独立客户端身份 <code>jp</code>，客户端的认证值填 <code>jp:你的hy2密码</code>。这是 hy2 的登录凭据，与上面 SOCKS5 出站密码分别设置。如果原来使用单密码模式，改成 userpass 会要求你更新原客户端认证值。想完整保留旧客户端时，可以用面板新增单独入站或保留原服务另开实例。</p>
+        <pre># 合并到 acl.rules 的前部，保留其余旧规则
+- outbound: reject
+  match: 'auth.id == "jp" &amp;&amp; proto == "udp"'
+- outbound: ferry_jp
+  match: 'auth.id == "jp"'</pre>
+        <p>其他地区照此新增各自的渡口固定地区账号、出站和 hy2 身份。分流时先匹配专用身份，再处理原有规则。较旧版本可使用独立实例或按其文档使用目标域名分流。</p>
+      </details>
+      <p>hy2 入口仍通过 UDP 接收客户端连接。渡口这一段是 SOCKS5 TCP，浏览器走 HTTPS/TCP；这些地区身份的 UDP 转发应明确拒绝。</p>
+      <p><a href="https://v2.hysteria.network/docs/advanced/Full-Server-Config/#outbounds" rel="noreferrer">Hysteria 2 出站文档</a> · <a href="https://v2.hysteria.network/docs/advanced/ACL/" rel="noreferrer">按用户分流文档</a></p>
+    </section>
+
+    <section class="panel pad lesson" id="reality">
+      <h2>已有 REALITY，怎么加一个日本落地？</h2>
+      <ol>
+        <li>保留现有 REALITY 入站的域名、端口、密钥和 short ID。为日本档案添加一个专用 VLESS 用户或入站。</li>
+        <li>在<strong>服务器端</strong>增加一个指向渡口的 SOCKS5 出站，凭据用上一步创建的 <code>home-jp.JP</code> 和渡口密码。</li>
+        <li>把日本用户或专用入站的 TCP 流量路由到 <code>ferry-jp</code>，UDP 路由到拒绝项。原 VLESS 用户保留原来的出站规则。客户端复制原配置，只换日本用户对应的 UUID，再给它取一个易认的名称。</li>
+      </ol>
+      <details open>
+        <summary>使用 sing-box 或 sing-box 面板</summary>
+        <p>在现有 VLESS 入站的 <code>users</code> 添加一个用户，<code>name</code> 填 <code>japan</code>，使用新 UUID，<code>flow</code> 跟原客户端对应。把下面的出站项追加到 <code>outbounds</code>。路由项放进 <code>route.rules</code> 的前面，用你的真实入站标签替换 <code>reality-in</code>。本例使用支持规则 <code>action</code> 的 sing-box。</p>
+        <pre>{ "type": "socks", "tag": "ferry-jp", "server": "{{PROXY_HOST}}",
+  "server_port": {{PROXY_PORT}}, "version": "5", "network": "tcp",
+  "username": "home-jp.JP", "password": "渡口密码" }</pre>
+        <pre>{ "inbound": ["reality-in"], "auth_user": ["japan"],
+  "network": ["udp"], "action": "reject" },
+{ "inbound": ["reality-in"], "auth_user": ["japan"],
+  "network": ["tcp"], "action": "route", "outbound": "ferry-jp" }</pre>
+        <p>保存后用 <code>sing-box check -c /你的配置文件</code> 检查。面板管理的用户和规则在面板里保存，以免生成配置时覆盖手工改动。</p>
+      </details>
+      <details>
+        <summary>使用 Xray 或 Xray 面板</summary>
+        <p>在 VLESS 入站为新 UUID 设置唯一的 <code>email</code>，例如 <code>japan@local</code>。出站协议选 SOCKS，目标地址如上。下面为新版 Xray 的 SOCKS 出站字段。面板中对应「地址、端口、用户名、密码」。</p>
+        <pre>{ "protocol": "socks", "tag": "ferry-jp",
+  "settings": { "address": "{{PROXY_HOST}}", "port": {{PROXY_PORT}},
+    "user": "home-jp.JP", "pass": "渡口密码" } }</pre>
+        <p>在 <code>routing.rules</code> 前部合并下面两项，将 <code>reality-in</code> 换成实际的入站标签。<code>block</code> 应是你配置中的拒绝出站标签。如果没有，先添加 <code>{"tag":"block","protocol":"blackhole"}</code> 到 outbounds。</p>
+        <pre>{ "type": "field", "inboundTag": ["reality-in"], "user": ["japan@local"],
+  "network": "udp", "outboundTag": "block" },
+{ "type": "field", "inboundTag": ["reality-in"], "user": ["japan@local"],
+  "network": "tcp", "outboundTag": "ferry-jp" }</pre>
+        <p>保存后用面板检查配置，或用 <code>xray run -test -config /你的配置文件</code> 校验。</p>
+      </details>
+      <p>代理核心也在容器里时，<code>127.0.0.1</code> 指那个核心自己的容器。需要让它与渡口加入同一个受信任的容器网络，再把出站地址填为渡口服务名和容器端口 7928。</p>
+      <p><a href="https://sing-box.sagernet.org/configuration/route/rule/#auth_user" rel="noreferrer">sing-box 用户路由文档</a> · <a href="https://xtls.github.io/config/outbounds/socks.html" rel="noreferrer">Xray SOCKS 出站文档</a></p>
+    </section>
+
+    <section class="panel pad lesson" id="verify">
+      <h2>验证和排错</h2>
+      <ol>
+        <li>先在 VPS 上用 curl 直连渡口并验证输出 IP。</li>
+        <li>再从客户端选择日本 hy2 或 REALITY 档案，打开 <code>https://api.ipify.org</code>。将结果与渡口「地区出口」或「连接与会话」里的实际 IP 对照。</li>
+        <li>切回原始档案再查一次，确认它使用原先的出站。如果两个档案都走了同一个出口，先检查服务端规则顺序和客户端身份。</li>
+      </ol>
+      <dl>
+        <dt>认证失败，或 HTTP 返回 407</dt><dd>核对代理密码和用户名。用 <code>账号.JP</code> 时先确认账号已授权日本。</dd>
+        <dt>能认证但连接失败，或 HTTP 返回 502</dt><dd>到「地区出口」查看该地区是否有健康出口，再到「事件与任务」看最新探测或地区核验结果。</dd>
+        <dt>连续请求看到同一个 IP</dt><dd>当前可能只有一个健康出口，或客户端正在复用已建立的 TCP 连接。</dd>
+        <dt>连接拒绝或超时</dt><dd>检查渡口是否已运行、SSH 转发是否打开，以及代理程序实际在哪台机器或哪个容器里。</dd>
+      </dl>
+    </section>
+  </div>
+</div>

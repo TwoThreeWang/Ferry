@@ -1,0 +1,21 @@
+# Build output
+/ferry
+/dist/
+*.test
+*.out
+coverage.*
+
+# Local data and secrets
+/ferry-data/
+setup-token.txt
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp

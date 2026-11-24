@@ -1,0 +1,38 @@
+name: ferry
+services:
+  ferry:
+    build: .
+    init: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, NET_RAW]
+    security_opt: ["no-new-privileges:true"]
+    devices:
+      - /dev/net/tun:/dev/net/tun:rw
+    read_only: true
+    tmpfs:
+      - /run/vpngate:mode=0700,size=8m
+      - /tmp:mode=1777,size=8m
+    sysctls:
+      net.ipv4.conf.all.rp_filter: "2"
+      net.ipv4.conf.default.rp_filter: "2"
+    environment:
+      FERRY_DATA: /data
+      FERRY_ENABLE_TUNNELS: "1"
+      FERRY_ADMIN_LISTEN: "0.0.0.0:8787"
+      FERRY_PROXY_LISTEN: "0.0.0.0:7928"
+      # Address shown in the console's examples. Set it to the LAN address
+      # if you publish the proxy beyond loopback.
+      FERRY_PROXY_ADDRESS: "127.0.0.1:${FERRY_PROXY_PORT:-7928}"
+    ports:
+      - "127.0.0.1:${FERRY_ADMIN_PORT:-8787}:8787"
+      - "127.0.0.1:${FERRY_PROXY_PORT:-7928}:7928"
+    volumes:
+      - data:/data
+    stop_grace_period: 15s
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+volumes:
+  data:
