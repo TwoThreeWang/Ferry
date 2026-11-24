@@ -2,6 +2,7 @@ name: ferry
 services:
   ferry:
     build: .
+    container_name: ferry
     init: true
     restart: unless-stopped
     cap_drop: [ALL]
