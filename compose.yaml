@@ -29,6 +29,9 @@ services:
       - "127.0.0.1:${FERRY_PROXY_PORT:-7928}:7928"
     volumes:
       - data:/data
+    networks:
+      - default
+      - postgres
     stop_grace_period: 15s
     logging:
       options:
@@ -36,3 +39,9 @@ services:
         max-file: "2"
 volumes:
   data:
+networks:
+  # Existing network created by another Compose project. Containers on it
+  # reach the proxy at ferry:7928.
+  postgres:
+    external: true
+    name: postgres_default
